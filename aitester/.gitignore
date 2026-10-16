@@ -1,0 +1,11 @@
+# Downloaded repository used for PR reviews
+/zedu-fe/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Generated review snapshots and outputs
+/reviews/open-prs/
+/reviews/pr-*/
+/reviews/posted-batch.json
