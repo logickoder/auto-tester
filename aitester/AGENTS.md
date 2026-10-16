@@ -58,6 +58,24 @@
 For significant architecture or performance changes, consult relevant reference
 guides if the repository provides them. Do not assume referenced guides exist.
 
+## Consolidated (bundle) PRs
+
+A bundle PR combines several tickets, usually listed in a table in the PR
+description, with roughly one commit per ticket.
+
+- Map each listed ticket to its commit(s) (`git log base..head`) and review each
+  commit's diff against that ticket's "What changed" and "How to test" claims.
+  Then review the combined diff for interactions between tickets.
+- Check shared components changed by one ticket against all their callers;
+  another ticket's page may depend on the old behaviour.
+- Flag changes that map to no listed ticket, tickets with no matching change,
+  and commit IDs that do not match their ticket, as nonblocking scope notes
+  unless they cause a defect.
+- In the comment, add a compact per-ticket checklist after the summary: one
+  line per ticket with ✅ (verified in code), ⚠️ (finding, see above), or ❓
+  (not verifiable from code, e.g. visual-only), plus a few words of evidence.
+  Keep findings above the checklist, ordered by severity.
+
 ## React review guidance (English)
 
 Apply only the checks relevant to this PR and the app's installed stack. Do not
