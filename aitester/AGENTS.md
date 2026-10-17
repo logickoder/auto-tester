@@ -14,10 +14,19 @@
   When no meaningful issue is found, say "No blocking issues found; suitable
   to merge from this code review, subject to required checks." Do not imply
   unverified tests passed or override failing required checks.
-- Identify posted reviews as ZeduTester. Avoid duplicate comments on the same
-  revision; update an existing ZeduTester comment when appropriate.
+- Identify posted reviews as ZeduTester. Post one comment per reviewed
+  revision: a new PR or a new head commit gets a new comment, never an edit of
+  an older one. Do not post twice for the same revision.
 - State testing limits briefly. Do not claim browser verification for isolated
   logic reproductions, or passing CI checks that were not verified.
+- Make each finding's origin unambiguous: name the commit that introduced it
+  (short SHA) next to the file:line link. In a PR with several tickets, also
+  name the ticket in the finding title, for example
+  "**[P2] VULCAN-530: Mobile redirect also runs on desktop.**" (`52f51ff`).
+- When a finding is verified in the running UI and the result is visible,
+  attach a screenshot that shows it, cropped to the relevant area. Use only
+  test accounts and keep personal data (emails, names, tokens) out of frame.
+  See "UI testing and screenshots" below for where to host the image.
 
 ## Review mindset and feedback
 
@@ -57,6 +66,42 @@
 
 For significant architecture or performance changes, consult relevant reference
 guides if the repository provides them. Do not assume referenced guides exist.
+
+## Consolidated (bundle) PRs
+
+A bundle PR combines several tickets, usually listed in a table in the PR
+description, with roughly one commit per ticket.
+
+- Map each listed ticket to its commit(s) (`git log base..head`) and review each
+  commit's diff against that ticket's "What changed" and "How to test" claims.
+  Then review the combined diff for interactions between tickets.
+- Check shared components changed by one ticket against all their callers;
+  another ticket's page may depend on the old behaviour.
+- Flag changes that map to no listed ticket, tickets with no matching change,
+  and commit IDs that do not match their ticket, as nonblocking scope notes
+  unless they cause a defect.
+- In the comment, add a compact per-ticket checklist after the summary: one
+  line per ticket with ✅ (verified in code), ⚠️ (finding, see above), or ❓
+  (not verifiable from code, e.g. visual-only), plus a few words of evidence.
+  Keep findings above the checklist, ordered by severity.
+- Attribute every finding to its ticket and commit (see "Scope and output"),
+  so the team knows which contributor's change to fix.
+
+## UI testing and screenshots
+
+- Test against the local server in `zedu-test/` (a worktree of `dev` with the
+  PR merged; `.env.local` uses the public URLs from the preview bundle). Say
+  in the comment which build was tested, e.g. "`dev` (`2dd60dd`) + this PR".
+- Capture screenshots to a PNG file with headless Chrome, for example
+  `chrome --headless=new --window-size=1280,800 --virtual-time-budget=8000
+  --screenshot=<file>.png <url>`. Pages behind sign-in need a Chrome profile
+  (`--user-data-dir`) that the user has signed in to once.
+- Host images in `zeduchat/auto-tester` on the `screenshots` branch under
+  `screenshots/zedu-fe/<pr>/<sha7>-<what>.png`, and embed the
+  `raw.githubusercontent.com` URL in the comment. Name what the screenshot
+  shows in one line under it, including the viewport size.
+- Review every screenshot before posting: test accounts only, with no emails,
+  tokens or other personal data visible.
 
 ## React review guidance (English)
 

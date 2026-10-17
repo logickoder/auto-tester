@@ -1,9 +1,16 @@
 # Downloaded repository used for PR reviews
 /zedu-fe/
+/zedu-test/
+# Chrome profile for screenshots (holds a sign-in session)
+/chrome-profile/
 
 # Python bytecode
 __pycache__/
 *.py[cod]
+
+# Local credentials and environment
+.env
+.env.*
 
 # Generated review snapshots and outputs
 /reviews/open-prs/
