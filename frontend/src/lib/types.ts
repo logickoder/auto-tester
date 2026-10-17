@@ -11,8 +11,19 @@ export interface TestResult {
   status: TestStatus;
   duration_ms: number | null;
   error: string | null;
+  owner: string | null;
   screenshot_path: string | null;
   screenshot_url: string | null;
+  created_at: string;
+}
+
+export interface Signoff {
+  id: string;
+  run_id: string;
+  decision: "approve" | "block";
+  comment: string | null;
+  override_reason: string | null;
+  decided_by_email: string;
   created_at: string;
 }
 
@@ -36,6 +47,7 @@ export interface Run {
   finished_at: string | null;
   created_at: string;
   tests?: TestResult[];
+  signoffs?: Signoff[];
 }
 
 export interface Project {
@@ -47,4 +59,21 @@ export interface Project {
   alert_channel: string | null;
   created_at: string;
   last_run: { id: string; verdict: Verdict; created_at: string } | null;
+}
+
+/** Returned once by POST /api/projects — the raw key is never shown again. */
+export interface ProjectCreated extends Project {
+  api_key: string;
+}
+
+/** One row of GET /api/tests (FR-22). enabled === null: reported results but not in the manifest. */
+export interface TestCatalogItem {
+  name: string;
+  feature: string | null;
+  priority: "P0" | "P1" | "P2";
+  owner: string | null;
+  enabled: boolean | null;
+  last_status: TestStatus | null;
+  last_run_id: string | null;
+  last_run_at: string | null;
 }

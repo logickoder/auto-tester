@@ -1,12 +1,11 @@
-// Proxy for the FastAPI backend: /api/backend/* -> FASTAPI_BASE_URL/*.
+// Proxy for the FastAPI backend: /api/backend/* -> FASTAPI_BASE_URL/api/*.
 // Keeps the backend URL server-side and avoids CORS in the browser.
 const FASTAPI_BASE_URL = process.env.FASTAPI_BASE_URL ?? "http://localhost:8000";
 
 async function proxy(request: Request, params: Promise<{ path: string[] }>) {
   const { path } = await params;
-  const target = `${FASTAPI_BASE_URL}/api/${path.join("/")}${
-    request.url.includes("?") ? `?${new URL(request.url).searchParams}` : ""
-  }`;
+  const { search } = new URL(request.url);
+  const target = `${FASTAPI_BASE_URL}/api/${path.join("/")}${search}`;
 
   const headers = new Headers();
   // Forward only what the API needs; never forward cookies.
@@ -15,19 +14,18 @@ async function proxy(request: Request, params: Promise<{ path: string[] }>) {
     if (value) headers.set(name, value);
   }
 
-  const init: RequestInit = {
-    method: request.method,
-    headers,
-    body: request.method === "POST" ? await request.text() : undefined,
-  };
-
   try {
-    const res = await fetch(target, init);
-    const body = await res.text();
-    return new Response(body, {
-      status: res.status,
-      headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
+    const res = await fetch(target, {
+      method: request.method,
+      headers,
+      body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.text(),
     });
+    // arrayBuffer, not text: dev-mode screenshots (PNG) come through here too.
+    const body = await res.arrayBuffer();
+    const out = new Headers({ "content-type": res.headers.get("content-type") ?? "application/json" });
+    const cache = res.headers.get("cache-control");
+    if (cache) out.set("cache-control", cache);
+    return new Response(body, { status: res.status, headers: out });
   } catch {
     return Response.json(
       { detail: "Backend is unreachable. Is uvicorn running on port 8000?" },
@@ -41,5 +39,9 @@ export async function GET(request: Request, ctx: { params: Promise<{ path: strin
 }
 
 export async function POST(request: Request, ctx: { params: Promise<{ path: string[] }> }) {
+  return proxy(request, ctx.params);
+}
+
+export async function PATCH(request: Request, ctx: { params: Promise<{ path: string[] }> }) {
   return proxy(request, ctx.params);
 }

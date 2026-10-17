@@ -24,27 +24,29 @@ async function authHeaders(): Promise<Record<string, string>> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
+async function request<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api/backend${path}`, {
-    headers: await authHeaders(),
+    method,
+    headers: {
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(await authHeaders()),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
     cache: "no-store",
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.detail ?? `Request failed (${res.status})`);
+    const data = await res.json().catch(() => ({}));
+    // FastAPI puts a string in "detail"; validation errors put an array there.
+    const detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail ?? "");
+    throw new ApiError(res.status, detail || `Request failed (${res.status})`);
   }
   return res.json();
 }
 
-export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`/api/backend${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, data.detail ?? `Request failed (${res.status})`);
-  }
-  return res.json();
+export function apiGet<T>(path: string): Promise<T> {
+  return request<T>("GET", path);
+}
+
+export function apiPost<T>(path: string, body: unknown): Promise<T> {
+  return request<T>("POST", path, body);
 }
