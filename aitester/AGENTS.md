@@ -103,6 +103,21 @@ description, with roughly one commit per ticket.
 - Review every screenshot before posting: test accounts only, with no emails,
   tokens or other personal data visible.
 
+## Language-specific guides
+
+Pick the guide that matches the repository under review, and apply only the
+checks relevant to the changed code:
+
+| Repository | Stack | Guide |
+| --- | --- | --- |
+| `zedu-hng/zedu-fe` | Next.js / React / TypeScript | "React review guidance" below |
+| `zedu-hng/zedu-desktop` | Flutter / Dart (Riverpod, GoRouter, Dio) | [`review-guides/dart-flutter.md`](review-guides/dart-flutter.md) |
+| `zedu-hng/zedu-be` | Go (Gin, GORM, Postgres) | [`review-guides/go.md`](review-guides/go.md) |
+
+When a frontend or desktop PR depends on a backend endpoint, check the route
+and request/response shape in `zedu-be` (all deploy branches, not only `dev`)
+before marking it verified.
+
 ## React review guidance (English)
 
 Apply only the checks relevant to this PR and the app's installed stack. Do not

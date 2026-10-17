@@ -1,6 +1,8 @@
 # Downloaded repository used for PR reviews
 /zedu-fe/
 /zedu-test/
+/zedu-be/
+/zedu-desktop/
 # Chrome profile for screenshots (holds a sign-in session)
 /chrome-profile/
 
