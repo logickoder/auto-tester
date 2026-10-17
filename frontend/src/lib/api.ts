@@ -35,10 +35,13 @@ async function request<T>(method: "GET" | "POST", path: string, body?: unknown):
     cache: "no-store",
   });
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    // FastAPI puts a string in "detail"; validation errors put an array there.
-    const detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail ?? "");
-    throw new ApiError(res.status, detail || `Request failed (${res.status})`);
+    const data: { detail?: unknown } = await res.json().catch(() => ({}));
+    // FastAPI puts a string in "detail"; validation errors put an array there;
+    // a crash or a proxy error may have no JSON body at all.
+    let detail = "";
+    if (typeof data.detail === "string") detail = data.detail;
+    else if (data.detail != null) detail = JSON.stringify(data.detail);
+    throw new ApiError(res.status, detail || `Request failed (HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ""})`);
   }
   return res.json();
 }

@@ -194,7 +194,16 @@ def _load_manifest() -> list[dict]:
 @router.get("/tests")
 def list_tests(_user: dict = Depends(require_user)):
     """The manifest merged with each test's most recent result."""
-    latest = get_store().latest_results()
+    try:
+        latest = get_store().latest_results()
+    except Exception as exc:  # e.g. migration 0002 not applied yet
+        logger.error("latest_results failed: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Could not read test results. If Supabase is on, run "
+            "supabase/migrations/0002_signoffs_owner.sql in the SQL editor. "
+            f"({str(exc)[:200]})",
+        )
     items: list[dict] = []
     seen: set[str] = set()
     for entry in _load_manifest():
