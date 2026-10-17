@@ -34,7 +34,8 @@ Open http://localhost:3000. To see data, post a demo run (see step 4).
 
 1. https://supabase.com → New project (free tier; note the project **pauses
    after inactivity** — wake it before the demo).
-2. **SQL Editor** → paste the contents of `supabase/migrations/0001_init.sql` → Run.
+2. **SQL Editor** → paste the contents of `supabase/migrations/0001_init.sql` → Run,
+   then `supabase/migrations/0002_signoffs_owner.sql` → Run.
 3. **Project Settings → API** → copy:
    - Project URL → `SUPABASE_URL` (backend) and `NEXT_PUBLIC_SUPABASE_URL` (frontend)
    - `anon` `public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
@@ -56,6 +57,9 @@ Open http://localhost:3000. To see data, post a demo run (see step 4).
    `frontend/.env.local`, fill in the values, restart both apps.
 
 ## 4. Create a project and send your first run
+
+The easy way: sign in to the dashboard, click **Connect project**, fill in the
+form and copy the API key it shows (once). The curl way:
 
 ```bash
 # 1. Create a project (needs a dashboard login token when Supabase is on)
@@ -84,10 +88,39 @@ The dashboard now shows the run with a **Not Ready** verdict (a P0 test failed)
 and the failing test with its error. Add `"screenshot_base64"` to a test to see
 the screenshot viewer too.
 
-## 5. Deploy
+## 5. Set up the runner (GitHub Actions)
+
+The Playwright suite lives in `e2e/` and runs from `.github/workflows/smoke.yml`
+on manual dispatch, nightly, and on push/PR touching `e2e/`.
+
+1. Repo → **Settings → Environments → New environment** named `staging`.
+2. Add these to that environment:
+
+   | Kind | Name | Value |
+   | --- | --- | --- |
+   | Variable | `AUTOTESTER_API_URL` | `https://tester.zedu.chat` |
+   | Variable | `AUTOTESTER_STAGING_URL` | `https://staging.zedu.chat` |
+   | Variable | `AUTOTESTER_STAGING_API_HEALTH_URL` | staging API health URL (optional) |
+   | Variable | `AUTOTESTER_USER_A_NAME`, `AUTOTESTER_USER_B_NAME` | display names of the two test accounts |
+   | Secret | `AUTOTESTER_API_KEY` | the project key from step 4 |
+   | Secret | `AUTOTESTER_USER_A_EMAIL`, `AUTOTESTER_USER_A_PASSWORD` | test account A (staging only, never a real user) |
+   | Secret | `AUTOTESTER_USER_B_EMAIL`, `AUTOTESTER_USER_B_PASSWORD` | test account B |
+
+3. Confirm the Zedu selectors in `e2e/pages/zedu.ts` (lines marked `TODO`) with
+   `npx playwright codegen https://staging.zedu.chat`, run one spec locally, then push.
+4. **Actions → Auto Tester smoke run → Run workflow**. The dashboard shows the run as
+   *Running* within seconds and a verdict when the job finishes.
+5. For the **Re-run** button, create a fine-grained GitHub token with *Actions: read and
+   write* on this repo and set `GITHUB_TOKEN` and `RUNNER_REPO=zedu-yodaa/auto-tester` on the API.
+6. For alerts, set `ALERT_WEBHOOK_URL` on the API to the Zedu channel's incoming webhook
+   (ask the leads which channel) and `DASHBOARD_URL` to the dashboard's public URL.
+
+## 6. Deploy
 
 - **Backend** (FastAPI): already wired to Coolify via the Dockerfile and the
-  `Deploy (Coolify)` workflow. Set the `SUPABASE_*` env vars in Coolify.
+  `Deploy (Coolify)` workflow. Set the `SUPABASE_*` env vars in Coolify, plus
+  `DASHBOARD_URL`, `STAGING_ALLOWLIST`, `ALLOWED_EMAIL_DOMAINS` and, when ready,
+  `ALERT_WEBHOOK_URL`, `GITHUB_TOKEN`, `RUNNER_REPO`.
 - **Frontend** (Next.js): import the repo into Vercel, set Root Directory to
   `frontend`, add `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
   and `FASTAPI_BASE_URL` (your Coolify URL, e.g. https://tester.zedu.chat),
