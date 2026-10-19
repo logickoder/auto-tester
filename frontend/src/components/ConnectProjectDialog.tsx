@@ -12,17 +12,21 @@ type Props = {
 
 const EMPTY = { name: "", repo_url: "", branch: "main", staging_url: "", alert_channel: "" };
 
+// The dashboard and the API live on different hosts, so the runner's API URL
+// cannot be derived from location.origin.
+const API_URL = process.env.NEXT_PUBLIC_AUTOTESTER_API_URL || "https://api.tester.zedu.chat";
+
 function githubSetup(apiKey: string, stagingUrl: string) {
-  const apiUrl = location.origin.includes("localhost") ? "https://tester.zedu.chat" : location.origin;
   return [
     "# In the repo that runs the tests -> Settings -> Environments -> staging",
     "# Variables",
-    `AUTOTESTER_API_URL=${apiUrl}`,
+    `AUTOTESTER_API_URL=${API_URL}`,
     `AUTOTESTER_STAGING_URL=${stagingUrl}`,
     "# Secrets",
     `AUTOTESTER_API_KEY=${apiKey}`,
     "AUTOTESTER_USER_A_EMAIL=...   AUTOTESTER_USER_A_PASSWORD=...",
     "AUTOTESTER_USER_B_EMAIL=...   AUTOTESTER_USER_B_PASSWORD=...",
+    "AUTOTESTER_STAGING_BASIC_USER=...   AUTOTESTER_STAGING_BASIC_PASSWORD=...   # staging password popup",
     "# Workflow file: .github/workflows/smoke.yml from the auto-tester repo",
   ].join("\n");
 }

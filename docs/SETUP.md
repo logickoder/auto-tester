@@ -98,13 +98,19 @@ on manual dispatch, nightly, and on push/PR touching `e2e/`.
 
    | Kind | Name | Value |
    | --- | --- | --- |
-   | Variable | `AUTOTESTER_API_URL` | `https://tester.zedu.chat` |
+   | Variable | `AUTOTESTER_API_URL` | `https://tester.zedu.chat` (`https://api.tester.zedu.chat` after the split in §6) |
    | Variable | `AUTOTESTER_STAGING_URL` | `https://staging.zedu.chat` |
    | Variable | `AUTOTESTER_STAGING_API_HEALTH_URL` | staging API health URL (optional) |
    | Variable | `AUTOTESTER_USER_A_NAME`, `AUTOTESTER_USER_B_NAME` | display names of the two test accounts |
    | Secret | `AUTOTESTER_API_KEY` | the project key from step 4 |
    | Secret | `AUTOTESTER_USER_A_EMAIL`, `AUTOTESTER_USER_A_PASSWORD` | test account A (staging only, never a real user) |
    | Secret | `AUTOTESTER_USER_B_EMAIL`, `AUTOTESTER_USER_B_PASSWORD` | test account B |
+   | Secret | `AUTOTESTER_STAGING_BASIC_USER`, `AUTOTESTER_STAGING_BASIC_PASSWORD` | the browser password popup in front of staging (HTTP basic auth; ask the leads) |
+
+   Only the runner repo needs this environment. In any other repo (the upstream
+   `zeduchat/auto-tester`, forks) the smoke run skips with a warning when it is
+   missing. If the runner moves, set the repo variable `AUTOTESTER_RUNNER_REPO`
+   (default `zedu-yodaa/auto-tester`).
 
 3. Confirm the Zedu selectors in `e2e/pages/zedu.ts` (lines marked `TODO`) with
    `npx playwright codegen https://staging.zedu.chat`, run one spec locally, then push.
@@ -115,16 +121,38 @@ on manual dispatch, nightly, and on push/PR touching `e2e/`.
 6. For alerts, set `ALERT_WEBHOOK_URL` on the API to the Zedu channel's incoming webhook
    (ask the leads which channel) and `DASHBOARD_URL` to the dashboard's public URL.
 
-## 6. Deploy
+## 6. Deploy (Coolify, two apps from this repo)
 
-- **Backend** (FastAPI): already wired to Coolify via the Dockerfile and the
-  `Deploy (Coolify)` workflow. Set the `SUPABASE_*` env vars in Coolify, plus
-  `DASHBOARD_URL`, `STAGING_ALLOWLIST`, `ALLOWED_EMAIL_DOMAINS` and, when ready,
-  `ALERT_WEBHOOK_URL`, `GITHUB_TOKEN`, `RUNNER_REPO`.
-- **Frontend** (Next.js): import the repo into Vercel, set Root Directory to
-  `frontend`, add `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-  and `FASTAPI_BASE_URL` (your Coolify URL, e.g. https://tester.zedu.chat),
-  then deploy.
+Both apps deploy from `main` of `zeduchat/auto-tester`. Vercel and Render are not used.
+
+**Interim, until someone with Coolify and DNS access does the steps below:** the
+root `Dockerfile` runs both in one container on tester.zedu.chat. Next.js is public
+on port 8000 and forwards `/api/*`, `/docs`, `/health` and `/openapi.json` to FastAPI
+on `127.0.0.1:8001` (`docker-start.sh`, `AUTOTESTER_API_PASSTHROUGH` in
+`frontend/next.config.ts`). The runner keeps `AUTOTESTER_API_URL=https://tester.zedu.chat`.
+Once the two apps below exist, change the API app's build back to the API alone.
+
+| App | Domain | Base directory | Build | Port |
+| --- | --- | --- | --- | --- |
+| API (FastAPI) | `api.tester.zedu.chat` | `/` | `Dockerfile` | 8000 |
+| Dashboard (Next.js) | `tester.zedu.chat` | `/frontend` | `frontend/Dockerfile` | 3000 |
+
+- **API**: set the `SUPABASE_*` env vars, plus `DASHBOARD_URL=https://tester.zedu.chat`,
+  `STAGING_ALLOWLIST`, `ALLOWED_EMAILS` or `ALLOWED_EMAIL_DOMAINS` and, when ready,
+  `ALERT_WEBHOOK_URL`, `GITHUB_TOKEN`, `RUNNER_REPO`. Without `SUPABASE_*` the API runs
+  in dev mode **with no login**, so never leave a public deploy that way.
+- **Dashboard**: Dockerfile build pack, base directory `/frontend`. Mark these as
+  **build variables** (they are baked into the browser bundle):
+  `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+  `NEXT_PUBLIC_AUTOTESTER_API_URL=https://api.tester.zedu.chat`. Runtime variable:
+  `FASTAPI_BASE_URL=https://api.tester.zedu.chat`.
+- **Moving the domains**: give the API app `api.tester.zedu.chat` first (DNS record
+  plus the Coolify domain), then give `tester.zedu.chat` to the dashboard app. Then
+  update `AUTOTESTER_API_URL` in the runner's `staging` environment and, in Supabase
+  **Authentication → URL Configuration**, set the Site URL to `https://tester.zedu.chat`.
+- **Auto-deploy**: the `Deploy (Coolify)` workflow calls `COOLIFY_WEBHOOK_URL` (API)
+  and, if set, `COOLIFY_FRONTEND_WEBHOOK_URL` (dashboard), with optional `COOLIFY_TOKEN`,
+  after the malware scan passes on `main`.
 
 ## Security rules (from the PRD — do not skip)
 

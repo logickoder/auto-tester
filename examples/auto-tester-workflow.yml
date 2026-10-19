@@ -10,6 +10,7 @@
 #              AUTOTESTER_REF (a commit SHA of auto-tester — pin it, PRD §5)
 #   secrets:   AUTOTESTER_API_KEY, AUTOTESTER_USER_A_EMAIL, AUTOTESTER_USER_A_PASSWORD,
 #              AUTOTESTER_USER_B_EMAIL, AUTOTESTER_USER_B_PASSWORD,
+#              AUTOTESTER_STAGING_BASIC_USER, AUTOTESTER_STAGING_BASIC_PASSWORD (staging popup),
 #              AUTOTESTER_REPO_TOKEN (only if auto-tester is private: read-only contents)
 name: Auto Tester smoke run
 
@@ -83,6 +84,9 @@ jobs:
 
       - name: Health check (FR-7)
         id: health
+        env:
+          STAGING_BASIC_USER: ${{ secrets.AUTOTESTER_STAGING_BASIC_USER }}
+          STAGING_BASIC_PASSWORD: ${{ secrets.AUTOTESTER_STAGING_BASIC_PASSWORD }}
         run: node scripts/health-check.mjs
 
       - name: Register run as Running
@@ -99,6 +103,8 @@ jobs:
           USER_B_EMAIL: ${{ secrets.AUTOTESTER_USER_B_EMAIL }}
           USER_B_PASSWORD: ${{ secrets.AUTOTESTER_USER_B_PASSWORD }}
           USER_B_NAME: ${{ vars.AUTOTESTER_USER_B_NAME }}
+          STAGING_BASIC_USER: ${{ secrets.AUTOTESTER_STAGING_BASIC_USER }}
+          STAGING_BASIC_PASSWORD: ${{ secrets.AUTOTESTER_STAGING_BASIC_PASSWORD }}
           TAG: ${{ inputs.tag }}
         run: |
           if [ -n "$TAG" ]; then

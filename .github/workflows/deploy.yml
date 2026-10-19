@@ -23,24 +23,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # API (root Dockerfile) and, once its Coolify app exists, the dashboard
+      # (frontend/Dockerfile). The dashboard webhook is optional.
       - name: Trigger Coolify deployment
         shell: bash
         env:
           COOLIFY_WEBHOOK_URL: ${{ secrets.COOLIFY_WEBHOOK_URL }}
+          COOLIFY_FRONTEND_WEBHOOK_URL: ${{ secrets.COOLIFY_FRONTEND_WEBHOOK_URL }}
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
         run: |
           set -uo pipefail
           if [[ -z "${COOLIFY_WEBHOOK_URL:-}" ]]; then
             echo "COOLIFY_WEBHOOK_URL secret is not set"; exit 1
           fi
-          # Safe to log: scheme, host and path only (no query string, no token)
-          echo "Calling: ${COOLIFY_WEBHOOK_URL%%\?*}"
           AUTH=()
           if [[ -n "${COOLIFY_TOKEN:-}" ]]; then AUTH=(-H "Authorization: Bearer ${COOLIFY_TOKEN}"); fi
-          CODE=$(curl --silent --show-error --max-time 60 -X POST -o /tmp/resp.txt -w '%{http_code}'             "${AUTH[@]}" "${COOLIFY_WEBHOOK_URL}") || true
-          echo "HTTP status: ${CODE}"
-          cat /tmp/resp.txt; echo
-          if [[ "${CODE}" != 2* ]]; then
-            echo "Coolify did not accept the deploy request"; exit 1
+          deploy() {
+            # Safe to log: scheme, host and path only (no query string, no token)
+            echo "[$1] Calling: ${2%%\?*}"
+            CODE=$(curl --silent --show-error --max-time 60 -X POST -o /tmp/resp.txt -w '%{http_code}' \
+              "${AUTH[@]}" "$2") || true
+            echo "[$1] HTTP status: ${CODE}"
+            cat /tmp/resp.txt; echo
+            if [[ "${CODE}" != 2* ]]; then
+              echo "[$1] Coolify did not accept the deploy request"; return 1
+            fi
+            echo "[$1] Deployment triggered"
+          }
+          FAILED=0
+          deploy api "${COOLIFY_WEBHOOK_URL}" || FAILED=1
+          if [[ -n "${COOLIFY_FRONTEND_WEBHOOK_URL:-}" ]]; then
+            deploy dashboard "${COOLIFY_FRONTEND_WEBHOOK_URL}" || FAILED=1
+          else
+            echo "[dashboard] COOLIFY_FRONTEND_WEBHOOK_URL not set, skipped"
           fi
-          echo "Deployment triggered"
+          exit "${FAILED}"

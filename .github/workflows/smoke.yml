@@ -52,17 +52,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      # Fork PRs never get environment secrets or variables, so a PR without the
-      # staging config skips with a warning. Every other trigger fails loudly.
+      # Fork PRs never get environment secrets or variables, and only the runner
+      # repo (vars.AUTOTESTER_RUNNER_REPO, default zedu-yodaa/auto-tester) holds the
+      # staging config. Those skip with a warning; the runner repo fails loudly.
       - name: Check runner configuration
         id: config
         env:
           EVENT: ${{ github.event_name }}
+          RUNNER_REPO: ${{ vars.AUTOTESTER_RUNNER_REPO || 'zedu-yodaa/auto-tester' }}
         run: |
           if [ -n "$BASE_URL" ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
-          elif [ "$EVENT" = "pull_request" ]; then
-            echo "::warning::Smoke run skipped: the staging environment config is not available to this PR (fork PR, or docs/SETUP.md §5 not done yet)."
+          elif [ "$EVENT" = "pull_request" ] || [ "$GITHUB_REPOSITORY" != "$RUNNER_REPO" ]; then
+            echo "::warning::Smoke run skipped: no staging environment config here (fork PR, or not the runner repo $RUNNER_REPO). See docs/SETUP.md §5."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "::error::vars.AUTOTESTER_STAGING_URL is not set in the staging environment. See docs/SETUP.md §5."
@@ -88,6 +90,9 @@ jobs:
       - name: Health check (FR-7)
         id: health
         if: steps.config.outputs.ready == 'true'
+        env:
+          STAGING_BASIC_USER: ${{ secrets.AUTOTESTER_STAGING_BASIC_USER }}
+          STAGING_BASIC_PASSWORD: ${{ secrets.AUTOTESTER_STAGING_BASIC_PASSWORD }}
         run: node scripts/health-check.mjs
 
       - name: Register run as Running
@@ -104,6 +109,8 @@ jobs:
           USER_B_EMAIL: ${{ secrets.AUTOTESTER_USER_B_EMAIL }}
           USER_B_PASSWORD: ${{ secrets.AUTOTESTER_USER_B_PASSWORD }}
           USER_B_NAME: ${{ vars.AUTOTESTER_USER_B_NAME }}
+          STAGING_BASIC_USER: ${{ secrets.AUTOTESTER_STAGING_BASIC_USER }}
+          STAGING_BASIC_PASSWORD: ${{ secrets.AUTOTESTER_STAGING_BASIC_PASSWORD }}
           TAG: ${{ inputs.tag }}
         run: |
           if [ -n "$TAG" ]; then

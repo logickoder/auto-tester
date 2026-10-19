@@ -39,6 +39,7 @@ cd e2e
 npm ci --ignore-scripts
 npx playwright install chromium
 export BASE_URL=https://staging.zedu.chat USER_A_EMAIL=... USER_A_PASSWORD=... USER_B_EMAIL=... USER_B_PASSWORD=...
+export STAGING_BASIC_USER=... STAGING_BASIC_PASSWORD=...   # staging's browser password popup
 npx playwright test --project=chromium -g "login shows the sidebar"
 ```
 
@@ -72,12 +73,22 @@ meant for Zedu's own repos (FR-13, needs the leads' approval).
 
 ## Deploy (Coolify)
 
-Dockerfile build pack, port 8000 — unchanged; add the `SUPABASE_*` env vars in
-Coolify when the project exists. GitHub secrets: COOLIFY_WEBHOOK_URL (optional
-COOLIFY_TOKEN); the Deploy (Coolify) workflow runs only after Malware Scan (CI
-Gate) passes on main. The `frontend/` app deploys to Vercel (root directory
-`frontend`).
+**Today (single container):** the root `Dockerfile` builds the dashboard and the
+API into one image on port 8000. The dashboard is public and forwards `/api/*`,
+`/docs` and `/health` to FastAPI inside the container, so tester.zedu.chat serves
+both with no Coolify or DNS changes.
+
+**Target:** two Coolify apps from this repo, the API (port 8000, on
+api.tester.zedu.chat) and the dashboard (`frontend/Dockerfile`, base directory
+`frontend`, port 3000, on tester.zedu.chat). Add the
+`SUPABASE_*` env vars before a public deploy. GitHub secrets: COOLIFY_WEBHOOK_URL
+(API), COOLIFY_FRONTEND_WEBHOOK_URL (dashboard, optional), optional COOLIFY_TOKEN.
+The Deploy (Coolify) workflow runs only after Malware Scan (CI Gate) passes on
+main. Details: [docs/SETUP.md §6](docs/SETUP.md#6-deploy-coolify-two-apps-from-this-repo).
 
 ## Live
 
-API: https://tester.zedu.chat
+- Dashboard: https://tester.zedu.chat
+- API: https://tester.zedu.chat/api/… (docs at https://tester.zedu.chat/docs)
+
+After the move to two apps, the API gets its own host: https://api.tester.zedu.chat.
