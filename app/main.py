@@ -1,7 +1,35 @@
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+import logging
 
-app = FastAPI(title="Auto Tester")
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
+
+from .config import get_settings
+from .routers import results
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("autotester")
+
+app = FastAPI(title="Auto Tester API")
+
+
+@app.exception_handler(Exception)
+async def unhandled_error(request: Request, exc: Exception) -> JSONResponse:
+    """Always answer JSON with a 'detail' so the dashboard can show what went wrong
+    (FastAPI's default is a plain-text 'Internal Server Error')."""
+    logger.exception("unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": f"{type(exc).__name__}: {exc}"[:500]})
+
+settings = get_settings()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key"],
+)
+
+app.include_router(results.router)
 
 PAGE = """<!doctype html>
 <html lang="en">

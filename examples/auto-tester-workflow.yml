@@ -1,0 +1,126 @@
+# Auto Tester workflow for a Zedu repo (e.g. Zedu web), PRD FR-13. Copy into
+# the target repo's .github/workflows/ after the leads approve.
+#
+# Same steps as this repo's .github/workflows/smoke.yml. The e2e suite is not
+# vendored: the job checks out zedu-yodaa/auto-tester next to the Zedu code.
+#
+# Setup in the target repo (Settings → Environments → "staging"):
+#   variables: AUTOTESTER_STAGING_URL, AUTOTESTER_STAGING_API_HEALTH_URL (optional),
+#              AUTOTESTER_API_URL, AUTOTESTER_USER_A_NAME, AUTOTESTER_USER_B_NAME,
+#              AUTOTESTER_REF (a commit SHA of auto-tester — pin it, PRD §5)
+#   secrets:   AUTOTESTER_API_KEY, AUTOTESTER_USER_A_EMAIL, AUTOTESTER_USER_A_PASSWORD,
+#              AUTOTESTER_USER_B_EMAIL, AUTOTESTER_USER_B_PASSWORD,
+#              AUTOTESTER_REPO_TOKEN (only if auto-tester is private: read-only contents)
+name: Auto Tester smoke run
+
+on:
+  workflow_dispatch: # FR-9: manual "Run now"
+    inputs:
+      tag:
+        description: "Only run tests with this tag, e.g. @P0 or @messaging (empty = all)"
+        type: string
+        default: ""
+  schedule:
+    - cron: "0 2 * * *" # FR-10: nightly
+  push:
+    branches: [main]
+
+permissions:
+  contents: read # NFR Security: read-only default token
+
+concurrency:
+  group: autotester-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  autotester:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15 # NFR Speed
+    environment: staging # secrets live in the GitHub environment, not the repo
+    defaults:
+      run:
+        working-directory: auto-tester/e2e
+    env:
+      CI: "true"
+      BASE_URL: ${{ vars.AUTOTESTER_STAGING_URL }}
+      API_HEALTH_URL: ${{ vars.AUTOTESTER_STAGING_API_HEALTH_URL }}
+      AUTOTESTER_API_URL: ${{ vars.AUTOTESTER_API_URL }}
+      AUTOTESTER_API_KEY: ${{ secrets.AUTOTESTER_API_KEY }}
+      RUN_TAG: ${{ github.event.repository.name }}-${{ github.run_number }}
+      TRIGGER: ${{ github.event_name == 'schedule' && 'nightly' || github.event_name == 'push' && 'push' || 'manual' }}
+    steps:
+      - name: Checkout this repo (for the commit message)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: app
+
+      - name: Checkout Auto Tester
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: zedu-yodaa/auto-tester
+          ref: ${{ vars.AUTOTESTER_REF }}
+          token: ${{ secrets.AUTOTESTER_REPO_TOKEN || github.token }}
+          path: auto-tester
+
+      # The runner reads the commit message with `git log` from its own folder,
+      # which is the auto-tester checkout. Record the Zedu commit instead.
+      - name: Record commit message
+        working-directory: app
+        run: echo "COMMIT_MESSAGE=$(git log -1 --pretty=%s | head -c 500)" >> "$GITHUB_ENV"
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: auto-tester/e2e/package-lock.json
+
+      - name: Install (lockfile, no install scripts — PRD §5)
+        run: npm ci --ignore-scripts
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Health check (FR-7)
+        id: health
+        run: node scripts/health-check.mjs
+
+      - name: Register run as Running
+        id: start
+        if: env.AUTOTESTER_API_KEY != ''
+        run: node scripts/start-run.mjs
+
+      - name: Run smoke tests
+        if: steps.health.outputs.up == 'true'
+        env:
+          USER_A_EMAIL: ${{ secrets.AUTOTESTER_USER_A_EMAIL }}
+          USER_A_PASSWORD: ${{ secrets.AUTOTESTER_USER_A_PASSWORD }}
+          USER_A_NAME: ${{ vars.AUTOTESTER_USER_A_NAME }}
+          USER_B_EMAIL: ${{ secrets.AUTOTESTER_USER_B_EMAIL }}
+          USER_B_PASSWORD: ${{ secrets.AUTOTESTER_USER_B_PASSWORD }}
+          USER_B_NAME: ${{ vars.AUTOTESTER_USER_B_NAME }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [ -n "$TAG" ]; then
+            npx playwright test --project=chromium --grep "$TAG"
+          else
+            npx playwright test --project=chromium
+          fi
+
+      - name: Post results (FR-15)
+        if: always() && env.AUTOTESTER_API_KEY != ''
+        env:
+          AUTOTESTER_RUN_ID: ${{ steps.start.outputs.run_id }}
+          ENV_DOWN: ${{ steps.health.outputs.up != 'true' }}
+        run: node scripts/post-results.mjs
+
+      - name: Upload traces and screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-evidence-${{ github.run_number }}
+          path: |
+            auto-tester/e2e/test-results
+            auto-tester/e2e/report
+          retention-days: 14
+          if-no-files-found: ignore

@@ -1,0 +1,16 @@
+{
+  "name": "auto-tester-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "health": "node scripts/health-check.mjs",
+    "start-run": "node scripts/start-run.mjs",
+    "post-results": "node scripts/post-results.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "22.20.5"
+  }
+}

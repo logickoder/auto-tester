@@ -2,3 +2,17 @@ __pycache__
 *.pyc
 .venv
 .env
+
+# Preflight runtime artifacts
+evidence/
+_*.txt
+_*.py
+_*.log
+_*.ps1
+
+# Next.js frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+
