@@ -98,7 +98,7 @@ on manual dispatch, nightly, and on push/PR touching `e2e/`.
 
    | Kind | Name | Value |
    | --- | --- | --- |
-   | Variable | `AUTOTESTER_API_URL` | `https://api.tester.zedu.chat` |
+   | Variable | `AUTOTESTER_API_URL` | `https://tester.zedu.chat` (`https://api.tester.zedu.chat` after the split in §6) |
    | Variable | `AUTOTESTER_STAGING_URL` | `https://staging.zedu.chat` |
    | Variable | `AUTOTESTER_STAGING_API_HEALTH_URL` | staging API health URL (optional) |
    | Variable | `AUTOTESTER_USER_A_NAME`, `AUTOTESTER_USER_B_NAME` | display names of the two test accounts |
@@ -124,6 +124,13 @@ on manual dispatch, nightly, and on push/PR touching `e2e/`.
 ## 6. Deploy (Coolify, two apps from this repo)
 
 Both apps deploy from `main` of `zeduchat/auto-tester`. Vercel and Render are not used.
+
+**Interim, until someone with Coolify and DNS access does the steps below:** the
+root `Dockerfile` runs both in one container on tester.zedu.chat. Next.js is public
+on port 8000 and forwards `/api/*`, `/docs`, `/health` and `/openapi.json` to FastAPI
+on `127.0.0.1:8001` (`docker-start.sh`, `AUTOTESTER_API_PASSTHROUGH` in
+`frontend/next.config.ts`). The runner keeps `AUTOTESTER_API_URL=https://tester.zedu.chat`.
+Once the two apps below exist, change the API app's build back to the API alone.
 
 | App | Domain | Base directory | Build | Port |
 | --- | --- | --- | --- | --- |
