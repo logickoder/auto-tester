@@ -21,6 +21,11 @@ def load_dotenv(path: Path | None = None) -> None:
             os.environ[key] = value
 
 
+def _csv(name: str, default: str = "") -> list[str]:
+    """Comma-separated env var -> lower-cased list without blanks."""
+    return [item.strip().lower() for item in os.getenv(name, default).split(",") if item.strip()]
+
+
 class Settings:
     def __init__(self) -> None:
         load_dotenv()
@@ -39,6 +44,24 @@ class Settings:
         self.results_rate_limit: int = int(os.getenv("RESULTS_RATE_LIMIT_PER_MIN", "30"))
         # Max decoded screenshot size accepted on the results endpoint (bytes).
         self.max_screenshot_bytes: int = int(os.getenv("MAX_SCREENSHOT_BYTES", str(2 * 1024 * 1024)))
+
+        # Public URL of the dashboard; used for links in alerts (FR-24).
+        self.dashboard_url: str = os.getenv("DASHBOARD_URL", "http://localhost:3000").rstrip("/")
+        # NFR Safety: hosts a project's staging_url may point at. Empty = no check (local dev).
+        self.staging_allowlist: list[str] = _csv("STAGING_ALLOWLIST")
+        # Who may log in. Both empty = any authenticated account (local dev only!).
+        self.allowed_emails: list[str] = _csv("ALLOWED_EMAILS")
+        self.allowed_email_domains: list[str] = _csv("ALLOWED_EMAIL_DOMAINS")
+        # FR-24: outbound webhook for failure alerts.
+        self.alert_webhook_url: str = os.getenv("ALERT_WEBHOOK_URL", "")
+        self.alert_on_success: bool = os.getenv("ALERT_ON_SUCCESS", "false").lower() in ("1", "true", "yes")
+        # FR-14: re-run through GitHub's workflow_dispatch API.
+        self.github_token: str = os.getenv("GITHUB_TOKEN", "")
+        self.runner_repo: str = os.getenv("RUNNER_REPO", "")  # "owner/repo" of the repo holding smoke.yml
+        self.runner_ref: str = os.getenv("RUNNER_REF", "main")
+        self.workflow_file: str = os.getenv("RUNNER_WORKFLOW_FILE", "smoke.yml")
+        # FR-22: the manifest the Tests page reads.
+        self.manifest_path: Path = Path(os.getenv("TEST_MANIFEST", str(ROOT_DIR / "e2e" / "manifest.json")))
 
     @property
     def supabase_configured(self) -> bool:

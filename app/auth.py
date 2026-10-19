@@ -6,6 +6,10 @@ Two verification paths:
   * otherwise                -> supabase.auth.get_user(token) (network call)
 When Supabase is not configured (dev mode) auth is skipped so the app can be
 demoed locally before a Supabase project exists.
+
+After verification the email is checked against ALLOWED_EMAILS /
+ALLOWED_EMAIL_DOMAINS so that not every Google account can read the team's
+release verdicts.
 """
 import logging
 from typing import Optional
@@ -48,6 +52,17 @@ def _verify_with_supabase(token: str) -> Optional[dict]:
         return None
 
 
+def _email_allowed(email: Optional[str]) -> bool:
+    settings = get_settings()
+    if not settings.allowed_emails and not settings.allowed_email_domains:
+        return True
+    email = (email or "").lower()
+    if email in settings.allowed_emails:
+        return True
+    domain = email.rsplit("@", 1)[-1] if "@" in email else ""
+    return domain in settings.allowed_email_domains
+
+
 async def require_user(
     request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(bearer)
 ) -> dict:
@@ -67,5 +82,8 @@ async def require_user(
         user = _verify_with_supabase(token)
     if user is None:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if not _email_allowed(user.get("email")):
+        logger.info("login refused for %s", user.get("email"))
+        raise HTTPException(status_code=403, detail="This account is not allowed to use Auto Tester")
     request.state.user = user
     return user

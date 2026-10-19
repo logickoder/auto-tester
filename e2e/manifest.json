@@ -1,0 +1,14 @@
+{
+  "tests": [
+    { "name": "staging is reachable", "feature": "environment", "priority": "P0", "owner": "platform-ci", "enabled": true },
+    { "name": "authenticate userA", "feature": "auth", "priority": "P0", "owner": "platform-ci", "enabled": true },
+    { "name": "authenticate userB", "feature": "auth", "priority": "P0", "owner": "platform-ci", "enabled": true },
+    { "name": "login shows the sidebar", "feature": "auth", "priority": "P0", "owner": "auth-channels", "enabled": true },
+    { "name": "logout returns to the login page", "feature": "auth", "priority": "P1", "owner": "auth-channels", "enabled": true },
+    { "name": "create a channel and a second user joins it", "feature": "channels", "priority": "P0", "owner": "auth-channels", "enabled": true },
+    { "name": "message sent by user A reaches user B", "feature": "messaging", "priority": "P0", "owner": "messaging-threads-dms", "enabled": true },
+    { "name": "direct message reaches the recipient", "feature": "messaging", "priority": "P0", "owner": "messaging-threads-dms", "enabled": true },
+    { "name": "thread reply is visible to the other user", "feature": "threads", "priority": "P0", "owner": "messaging-threads-dms", "enabled": true },
+    { "name": "file upload shows the file in the channel", "feature": "files", "priority": "P0", "owner": "files-search-settings", "enabled": true }
+  ]
+}

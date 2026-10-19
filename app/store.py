@@ -14,9 +14,10 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import urlparse
 
 from .config import get_settings
-from .models import RunIn
+from .models import RunIn, RunUpdate, SignoffIn, TestResultIn
 from .verdict import compute_verdict, summarise
 
 logger = logging.getLogger("autotester.store")
@@ -24,6 +25,8 @@ logger = logging.getLogger("autotester.store")
 API_KEY_PREFIX = "at_"
 EVIDENCE_BUCKET = "evidence"
 
+
+# -- small helpers ----------------------------------------------------------
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -35,6 +38,41 @@ def _sha256(value: str) -> str:
 
 def _slug(text: str) -> str:
     return re.sub(r"[^a-zA-Z0-9._-]+", "-", text).strip("-").lower()[:80] or "test"
+
+
+def _iso(value: Optional[datetime]) -> Optional[str]:
+    return value.isoformat() if value else None
+
+
+def _parse_iso(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _duration_ms(started: Optional[datetime], finished: Optional[datetime]) -> Optional[int]:
+    if not started or not finished:
+        return None
+    try:
+        return int((finished - started).total_seconds() * 1000)
+    except TypeError:  # one aware, one naive datetime
+        return None
+
+
+def validate_staging_url(url: Optional[str]) -> None:
+    """NFR Safety: a project's staging_url must point at an allow-listed host.
+    An empty STAGING_ALLOWLIST (local dev) disables the check."""
+    if not url:
+        return
+    allowed = get_settings().staging_allowlist
+    if not allowed:
+        return
+    host = (urlparse(url).hostname or "").lower()
+    if not any(host == a or host.endswith("." + a) for a in allowed):
+        raise ValueError(f"staging_url host '{host}' is not in the staging allow-list")
 
 
 def decode_screenshot(data: str) -> tuple[bytes, str]:
@@ -62,6 +100,11 @@ def decode_screenshot(data: str) -> tuple[bytes, str]:
     return raw, content_type
 
 
+def _evidence_name(run_id: str, test_name: str, content_type: str) -> str:
+    ext = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(content_type, "png")
+    return f"{run_id}/{_slug(test_name)}.{ext}"
+
+
 def _attach_last_run(projects: list[dict], runs: list[dict]) -> list[dict]:
     """Add last_run (id, verdict, created_at) to each project card."""
     latest: dict[str, dict] = {}
@@ -75,6 +118,64 @@ def _attach_last_run(projects: list[dict], runs: list[dict]) -> list[dict]:
     return projects
 
 
+def _test_dict(run_id: str, t: TestResultIn, screenshot_path: Optional[str]) -> dict:
+    """One test_results row (stores add id/created_at where needed)."""
+    return {
+        "run_id": run_id,
+        "name": t.name,
+        "feature": t.feature,
+        "priority": t.priority,
+        "status": t.status,
+        "duration_ms": t.duration_ms,
+        "error": t.error,
+        "owner": t.owner,
+        "screenshot_path": screenshot_path,
+    }
+
+
+def _run_dict(project_id: str, data: RunIn, tests: list[dict]) -> dict:
+    """A new runs row. With status='running' and no tests the verdict is 'running'."""
+    return {
+        "project_id": project_id,
+        "branch": data.branch,
+        "commit_sha": data.commit,
+        "commit_message": data.commit_message,
+        "trigger": data.trigger,
+        "environment": data.environment,
+        "status": data.status,
+        "verdict": compute_verdict(data.status, tests),
+        **summarise(tests),
+        "duration_ms": _duration_ms(data.started_at, data.finished_at),
+        "started_at": _iso(data.started_at) or _now(),
+        "finished_at": _iso(data.finished_at),
+    }
+
+
+def _finish_patch(run: dict, data: RunUpdate, tests: list[dict]) -> dict:
+    """Fields that change when a 'running' run is finished."""
+    finished = data.finished_at or datetime.now(timezone.utc)
+    return {
+        "status": data.status,
+        "verdict": compute_verdict(data.status, tests),
+        **summarise(tests),
+        "finished_at": finished.isoformat(),
+        "duration_ms": _duration_ms(_parse_iso(run.get("started_at")), finished),
+    }
+
+
+def _signoff_dict(run_id: str, user: dict, data: SignoffIn) -> dict:
+    return {
+        "run_id": run_id,
+        "decision": data.decision,
+        "comment": data.comment,
+        "override_reason": data.override_reason,
+        "decided_by_email": user.get("email") or "unknown",
+        "decided_by_id": user.get("sub"),
+    }
+
+
+# -- in-memory store (dev mode) -----------------------------------------------
+
 class MemoryStore:
     """Process-local store used when Supabase is not configured (dev mode)."""
 
@@ -83,8 +184,10 @@ class MemoryStore:
         self._projects: dict[str, dict] = {}
         self._runs: dict[str, dict] = {}
         self._tests: dict[str, list[dict]] = {}
+        self._signoffs: dict[str, list[dict]] = {}
         self._key_hashes: dict[str, str] = {}  # sha256 -> project_id
 
+    # projects
     def create_project(self, data: dict) -> tuple[dict, str]:
         raw_key = API_KEY_PREFIX + secrets.token_urlsafe(32)
         project = {
@@ -100,7 +203,7 @@ class MemoryStore:
         with self._lock:
             self._projects[project["id"]] = project
             self._key_hashes[project["api_key_hash"]] = project["id"]
-        return project, raw_key
+        return dict(project), raw_key
 
     def list_projects(self) -> list[dict]:
         with self._lock:
@@ -108,60 +211,45 @@ class MemoryStore:
             runs = [dict(r) for r in self._runs.values()]
         return _attach_last_run(projects, runs)
 
+    def get_project(self, project_id: str) -> Optional[dict]:
+        with self._lock:
+            project = self._projects.get(project_id)
+            return dict(project) if project else None
+
     def get_project_by_api_key(self, raw_key: str) -> Optional[dict]:
         project_id = self._key_hashes.get(_sha256(raw_key))
         with self._lock:
             project = self._projects.get(project_id)
             return dict(project) if project else None
 
-    def create_run(self, project_id: str, data: "RunIn") -> dict:
+    # runs
+    def _build_tests(self, run_id: str, tests: list[TestResultIn]) -> list[dict]:
+        rows = []
+        for t in tests:
+            path = self._save_evidence(run_id, t.name, t.screenshot_base64) if t.screenshot_base64 else None
+            rows.append({"id": str(uuid.uuid4()), **_test_dict(run_id, t, path), "created_at": _now()})
+        return rows
+
+    def create_run(self, project_id: str, data: RunIn) -> dict:
         run_id = str(uuid.uuid4())
-        tests: list[dict] = []
-        for t in data.tests:
-            screenshot_path = None
-            if t.screenshot_base64:
-                screenshot_path = self._save_evidence(run_id, t.name, t.screenshot_base64)
-            tests.append(
-                {
-                    "id": str(uuid.uuid4()),
-                    "run_id": run_id,
-                    "name": t.name,
-                    "feature": t.feature,
-                    "priority": t.priority,
-                    "status": t.status,
-                    "duration_ms": t.duration_ms,
-                    "error": t.error,
-                    "screenshot_path": screenshot_path,
-                    "created_at": _now(),
-                }
-            )
-        verdict = compute_verdict(data.status, tests)
-        counts = summarise(tests)
-        started = data.started_at.isoformat() if data.started_at else _now()
-        finished = data.finished_at.isoformat() if data.finished_at else None
-        duration_ms = None
-        if data.started_at and data.finished_at:
-            duration_ms = int((data.finished_at - data.started_at).total_seconds() * 1000)
-        run = {
-            "id": run_id,
-            "project_id": project_id,
-            "branch": data.branch,
-            "commit_sha": data.commit,
-            "commit_message": data.commit_message,
-            "trigger": data.trigger,
-            "environment": data.environment,
-            "status": data.status,
-            "verdict": verdict,
-            **counts,
-            "duration_ms": duration_ms,
-            "started_at": started,
-            "finished_at": finished,
-            "created_at": _now(),
-        }
+        tests = self._build_tests(run_id, data.tests)
+        run = {"id": run_id, **_run_dict(project_id, data, tests), "created_at": _now()}
         with self._lock:
             self._runs[run_id] = run
             self._tests[run_id] = tests
-        return run
+        return dict(run)
+
+    def update_run(self, run_id: str, project_id: str, data: RunUpdate) -> Optional[dict]:
+        with self._lock:
+            run = self._runs.get(run_id)
+            if not run or run["project_id"] != project_id:
+                return None
+        tests = self._build_tests(run_id, data.tests)
+        updated = {**run, **_finish_patch(run, data, tests)}
+        with self._lock:
+            self._runs[run_id] = updated
+            self._tests[run_id] = tests
+        return dict(updated)
 
     def list_runs(self, project_id: Optional[str] = None) -> list[dict]:
         with self._lock:
@@ -176,19 +264,40 @@ class MemoryStore:
             run = self._runs.get(run_id)
             if not run:
                 return None
-            return {**dict(run), "tests": [dict(t) for t in self._tests.get(run_id, [])]}
+            return {
+                **dict(run),
+                "tests": [dict(t) for t in self._tests.get(run_id, [])],
+                "signoffs": [dict(s) for s in self._signoffs.get(run_id, [])],
+            }
 
-    # -- evidence -----------------------------------------------------------
+    # sign-off (FR-26)
+    def add_signoff(self, run_id: str, user: dict, data: SignoffIn) -> Optional[dict]:
+        row = {"id": str(uuid.uuid4()), **_signoff_dict(run_id, user, data), "created_at": _now()}
+        with self._lock:
+            if run_id not in self._runs:
+                return None
+            self._signoffs.setdefault(run_id, []).insert(0, row)
+        return dict(row)
+
+    # tests page (FR-22)
+    def latest_results(self) -> dict[str, dict]:
+        """Most recent result per test name."""
+        with self._lock:
+            runs = sorted(self._runs.values(), key=lambda r: r["created_at"] or "", reverse=True)
+            latest: dict[str, dict] = {}
+            for run in runs:
+                for t in self._tests.get(run["id"], []):
+                    latest.setdefault(t["name"], {**t, "run_created_at": run["created_at"]})
+            return latest
+
+    # evidence
     def _save_evidence(self, run_id: str, test_name: str, b64: str) -> Optional[str]:
         try:
             raw, content_type = decode_screenshot(b64)
         except ValueError as exc:
             logger.warning("screenshot rejected for %s: %s", test_name, exc)
             return None
-        ext = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(
-            content_type, "png"
-        )
-        rel = f"{run_id}/{_slug(test_name)}.{ext}"
+        rel = _evidence_name(run_id, test_name, content_type)
         dest = get_settings().evidence_dir / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(raw)
@@ -209,8 +318,11 @@ class MemoryStore:
     def screenshot_url(self, run_id: str, rel_path: Optional[str]) -> Optional[str]:
         if not rel_path:
             return None
-        return f"/api/evidence/{rel_path}"
+        # Through the Next.js proxy so the browser can load it on :3000.
+        return f"/api/backend/evidence/{rel_path}"
 
+
+# -- Supabase store -----------------------------------------------------------
 
 class SupabaseStore:
     """Stores runs/projects in Supabase (tables + private Storage bucket)."""
@@ -221,6 +333,7 @@ class SupabaseStore:
         settings = get_settings()
         self.client = create_client(settings.supabase_url, settings.supabase_service_role_key)
 
+    # projects
     def create_project(self, data: dict) -> tuple[dict, str]:
         raw_key = API_KEY_PREFIX + secrets.token_urlsafe(32)
         row = {
@@ -240,6 +353,10 @@ class SupabaseStore:
         runs = self.client.table("runs").select("*").order("created_at", desc=True).execute().data
         return _attach_last_run(projects, runs)
 
+    def get_project(self, project_id: str) -> Optional[dict]:
+        resp = self.client.table("projects").select("*").eq("id", project_id).limit(1).execute()
+        return resp.data[0] if resp.data else None
+
     def get_project_by_api_key(self, raw_key: str) -> Optional[dict]:
         resp = (
             self.client.table("projects")
@@ -250,49 +367,40 @@ class SupabaseStore:
         )
         return resp.data[0] if resp.data else None
 
-    def create_run(self, project_id: str, data: "RunIn") -> dict:
-        verdict = compute_verdict(data.status, [t.model_dump() for t in data.tests])
-        counts = summarise([t.model_dump() for t in data.tests])
-        duration_ms = None
-        if data.started_at and data.finished_at:
-            duration_ms = int((data.finished_at - data.started_at).total_seconds() * 1000)
-        run = {
-            "id": str(uuid.uuid4()),
-            "project_id": project_id,
-            "branch": data.branch,
-            "commit_sha": data.commit,
-            "commit_message": data.commit_message,
-            "trigger": data.trigger,
-            "environment": data.environment,
-            "status": data.status,
-            "verdict": verdict,
-            **counts,
-            "duration_ms": duration_ms,
-            "started_at": data.started_at.isoformat() if data.started_at else _now(),
-            "finished_at": data.finished_at.isoformat() if data.finished_at else None,
-        }
-        run = self.client.table("runs").insert(run).execute().data[0]
+    # runs
+    def _build_tests(self, run_id: str, tests: list[TestResultIn]) -> list[dict]:
+        rows = []
+        for t in tests:
+            path = self._save_evidence(run_id, t.name, t.screenshot_base64) if t.screenshot_base64 else None
+            rows.append(_test_dict(run_id, t, path))
+        return rows
 
-        test_rows = []
-        for t in data.tests:
-            screenshot_path = None
-            if t.screenshot_base64:
-                screenshot_path = self._save_evidence(run["id"], t.name, t.screenshot_base64)
-            test_rows.append(
-                {
-                    "run_id": run["id"],
-                    "name": t.name,
-                    "feature": t.feature,
-                    "priority": t.priority,
-                    "status": t.status,
-                    "duration_ms": t.duration_ms,
-                    "error": t.error,
-                    "screenshot_path": screenshot_path,
-                }
-            )
-        if test_rows:
-            self.client.table("test_results").insert(test_rows).execute()
+    def create_run(self, project_id: str, data: RunIn) -> dict:
+        plain = [t.model_dump() for t in data.tests]
+        run = self.client.table("runs").insert(_run_dict(project_id, data, plain)).execute().data[0]
+        rows = self._build_tests(run["id"], data.tests)
+        if rows:
+            self.client.table("test_results").insert(rows).execute()
         return run
+
+    def update_run(self, run_id: str, project_id: str, data: RunUpdate) -> Optional[dict]:
+        resp = (
+            self.client.table("runs")
+            .select("*")
+            .eq("id", run_id)
+            .eq("project_id", project_id)
+            .limit(1)
+            .execute()
+        )
+        if not resp.data:
+            return None
+        run = resp.data[0]
+        rows = self._build_tests(run_id, data.tests)
+        if rows:
+            self.client.table("test_results").insert(rows).execute()
+        plain = [t.model_dump() for t in data.tests]
+        patch = _finish_patch(run, data, plain)
+        return self.client.table("runs").update(patch).eq("id", run_id).execute().data[0]
 
     def list_runs(self, project_id: Optional[str] = None) -> list[dict]:
         query = self.client.table("runs").select("*").order("created_at", desc=True)
@@ -312,19 +420,46 @@ class SupabaseStore:
             .execute()
             .data
         )
-        return {**run_resp.data[0], "tests": tests}
+        signoffs = (
+            self.client.table("signoffs")
+            .select("*")
+            .eq("run_id", run_id)
+            .order("created_at", desc=True)
+            .execute()
+            .data
+        )
+        return {**run_resp.data[0], "tests": tests, "signoffs": signoffs}
 
-    # -- evidence -----------------------------------------------------------
+    # sign-off (FR-26)
+    def add_signoff(self, run_id: str, user: dict, data: SignoffIn) -> Optional[dict]:
+        exists = self.client.table("runs").select("id").eq("id", run_id).limit(1).execute().data
+        if not exists:
+            return None
+        return self.client.table("signoffs").insert(_signoff_dict(run_id, user, data)).execute().data[0]
+
+    # tests page (FR-22)
+    def latest_results(self) -> dict[str, dict]:
+        rows = (
+            self.client.table("test_results")
+            .select("name,feature,priority,status,owner,run_id,created_at")
+            .order("created_at", desc=True)
+            .limit(2000)
+            .execute()
+            .data
+        )
+        latest: dict[str, dict] = {}
+        for row in rows:
+            latest.setdefault(row["name"], {**row, "run_created_at": row["created_at"]})
+        return latest
+
+    # evidence
     def _save_evidence(self, run_id: str, test_name: str, b64: str) -> Optional[str]:
         try:
             raw, content_type = decode_screenshot(b64)
         except ValueError as exc:
             logger.warning("screenshot rejected for %s: %s", test_name, exc)
             return None
-        ext = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(
-            content_type, "png"
-        )
-        path = f"{run_id}/{_slug(test_name)}.{ext}"
+        path = _evidence_name(run_id, test_name, content_type)
         try:
             self.client.storage.from_(EVIDENCE_BUCKET).upload(
                 path, raw, {"content-type": content_type, "x-upsert": "true"}
@@ -364,4 +499,3 @@ def get_store():
                     _store = MemoryStore()
                     logger.warning("store: in-memory dev mode (SUPABASE_URL not set)")
     return _store
-

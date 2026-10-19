@@ -9,7 +9,10 @@ import { DemoRunCard, GoogleIcon } from "@/components/LoginVisuals";
 function LoginForm() {
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/";
-  const [error, setError] = useState<string | null>(null);
+  const authError = searchParams.get("error");
+  const [error, setError] = useState<string | null>(
+    authError === "auth" ? "Google sign-in did not complete. Please try again." : null
+  );
   const [loading, setLoading] = useState(false);
 
   async function signInWithGoogle() {
