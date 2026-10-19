@@ -13,6 +13,17 @@ if (!ALLOWED_HOSTS.some((allowed) => host === allowed || host.endsWith(`.${allow
   throw new Error(`Refusing to run against ${host}: not a staging host (allowed: ${ALLOWED_HOSTS.join(", ")})`);
 }
 
+// Staging sits behind an HTTP basic-auth popup. Credentials come from env only and
+// are sent to the staging origin alone, never to other hosts the app calls.
+const basicAuth =
+  process.env.STAGING_BASIC_USER && process.env.STAGING_BASIC_PASSWORD
+    ? {
+        username: process.env.STAGING_BASIC_USER,
+        password: process.env.STAGING_BASIC_PASSWORD,
+        origin: new URL(BASE_URL).origin,
+      }
+    : undefined;
+
 // FR-2: tests switched off in the manifest never run.
 const manifest = JSON.parse(readFileSync(new URL("./manifest.json", import.meta.url), "utf8")) as {
   tests: Array<{ name: string; enabled?: boolean }>;
@@ -36,6 +47,7 @@ export default defineConfig({
   outputDir: "test-results",
   use: {
     baseURL: BASE_URL,
+    httpCredentials: basicAuth,
     screenshot: "only-on-failure", // FR-12
     trace: "on-first-retry", // FR-12
     video: "off",
