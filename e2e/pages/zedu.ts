@@ -96,6 +96,55 @@ export class Zedu {
     await expect(this.threadPanel().getByText(reply, { exact: true })).toBeVisible();
   }
 
+  /** Hover a message and pick an entry from its actions menu (edit, delete, ...). */
+  async messageAction(messageText: string, action: RegExp) {
+    await this.messageList().getByText(messageText, { exact: true }).hover();
+    await this.page.getByRole("button", { name: /more actions|message actions/i }).click(); // TODO
+    await this.page.getByRole("menuitem", { name: action }).click();
+  }
+
+  async editMessage(oldText: string, newText: string) {
+    await this.messageAction(oldText, /^edit/i);
+    const box = this.messageList().getByRole("textbox"); // TODO inline editor or composer?
+    await box.fill(newText);
+    await box.press("Enter");
+    await this.expectMessage(newText);
+  }
+
+  async deleteMessage(text: string) {
+    await this.messageAction(text, /^delete/i);
+    await this.page.getByRole("button", { name: /^delete$/i }).click(); // TODO confirm dialog text
+    await expect(this.messageList().getByText(text, { exact: true })).toHaveCount(0);
+  }
+
+  async leaveChannel(name: string) {
+    await this.openChannel(name);
+    await this.page.getByRole("button", { name: /channel settings/i }).click(); // TODO
+    await this.page.getByRole("menuitem", { name: /leave channel/i }).click();
+    await expect(this.sidebar().getByRole("link", { name, exact: true })).toHaveCount(0);
+  }
+
+  /** Unread marker on a channel in the sidebar. */
+  unreadBadge(channelName: string): Locator {
+    return this.sidebar().getByRole("link", { name: channelName }).getByTestId("unread-badge"); // TODO data-testid
+  }
+
+  // --- search ----------------------------------------------------------------
+  async search(query: string) {
+    await this.page.getByRole("searchbox").or(this.page.getByPlaceholder(/search/i)).first().fill(query); // TODO
+    await this.page.keyboard.press("Enter");
+  }
+
+  searchResults(): Locator {
+    return this.page.getByTestId("search-results"); // TODO data-testid
+  }
+
+  // --- settings --------------------------------------------------------------
+  async openProfileSettings() {
+    await this.page.getByTestId("user-menu").click(); // TODO data-testid
+    await this.page.getByRole("menuitem", { name: /profile|settings/i }).first().click(); // TODO
+  }
+
   async openDirectMessage(displayName: string) {
     await this.page.getByRole("button", { name: /new message|direct message/i }).click(); // TODO
     await this.page.getByPlaceholder(/search people|to:/i).fill(displayName);
