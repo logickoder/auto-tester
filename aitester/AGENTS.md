@@ -128,11 +128,12 @@ A PR can only be called "suitable to merge" as a whole when every ticket is
 ✅. Otherwise, tell the reviewer which tickets are ready and that the PR
 cannot merge until the ⚠️ tickets are fixed or split out.
 
-## Merge decision (zedu-hng/zedu-desktop only)
+## Merge decision (zedu-fe, zedu-mobile, zedu-desktop)
 
 After testing a revision and before posting its comment, decide whether the PR can merge
 without a human reviewer. Put the result in a `### Merge decision` section of the same
-comment. Every other repository: always escalate.
+comment. This covers `zedu-hng/zedu-fe`, `zedu-hng/zedu-mobile` and `zedu-hng/zedu-desktop`.
+Every other repository: always escalate.
 
 `MERGE_MODE` is `shadow` or `live`. The default is `shadow`: post the decision, do not approve
 or merge, and let a reviewer merge. Only a maintainer sets `live`.
@@ -158,8 +159,9 @@ or merge, and let a reviewer merge. Only a maintainer sets `live`.
 Check these from GitHub data in code, not from agent output. All must hold:
 
 - Every ticket is ✅ and each ✅ was verified by a test or reproduction, not only by reading.
-- The PR head is still the reviewed SHA. Base is `dev`. Not a draft.
-- Every status on the SHA is `success`, with no pending ones. The gate reads CI to decide.
+- The PR head is still the reviewed SHA. Base is `dev`. Not a draft. The PR has no merge conflicts.
+- Every status on the SHA is `success`, with no pending ones. FE has no fork build, so there
+  its checks and `Build` stand in for `Fork build`. The gate reads CI to decide.
   The comment still never reports CI state (see "Scope and output").
 - No unresolved review threads and no `changes-requested` label.
 - No change to `.github/`, dependency or lock files, env files, or auth, token, secret or
