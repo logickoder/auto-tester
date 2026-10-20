@@ -95,6 +95,27 @@ description, with roughly one commit per ticket.
 - Attribute every finding to its ticket and commit (see "Scope and output"),
   so the team knows which contributor's change to fix.
 
+## Commit status
+
+After posting a revision's comment, post a commit status on the reviewed head SHA so CI and the
+review queue can read the verdict without parsing the comment:
+
+```
+gh api repos/<owner>/<repo>/statuses/<head-sha> -f context=ZeduTester -f state=<state> \
+  -f description="<80 chars or less>" -f target_url=<url of the comment>
+```
+
+- `success`: no blocking findings and every ticket is ✅. Description: "No blocking issues".
+- `failure`: at least one must-fix finding, or a ticket marked needs changes. Description: the
+  number of must-fix findings, for example "2 must-fix findings".
+- Post no status for a revision you have not reviewed yet. A status belongs to one SHA, so a
+  new push starts with none. Absent means "not reviewed yet", never "clean".
+- Post the status only after the comment exists, and only for the SHA you reviewed. Check the
+  head has not moved first.
+- The status is an input to the review queue, not a required check. Never describe it in the
+  comment as CI state (see "Scope and output").
+- Needs the `repo:status` scope, or write access, on the account that posts the comments.
+
 ## Per-ticket report format
 
 Every PR, including a single-ticket one, is reported ticket by ticket. List
