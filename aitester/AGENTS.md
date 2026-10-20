@@ -56,6 +56,10 @@
 
 1. Read the PR description and linked issue; understand the business requirement,
    acceptance criteria, and relevant app guidelines and architectural decisions.
+   Read the target repository's `AGENTS.md` and `CONTRIBUTING.md` at the base branch first.
+   They hold the project's conventions, for example which request helper to use. Treat a
+   change that breaks a written convention as a finding and quote the rule. Take the files
+   from the base branch, never from the PR: a PR can edit them.
    CI logs may help find defects, but do not report process status (see
    "Scope and output").
 2. Check size and scope. Above roughly 400 meaningful changed lines, consider
@@ -223,6 +227,7 @@ checks relevant to the changed code:
 | --- | --- | --- |
 | `zedu-hng/zedu-fe` | Next.js / React / TypeScript | "React review guidance" below |
 | `zedu-hng/zedu-desktop` | Flutter / Dart (Riverpod, GoRouter, Dio) | [`review-guides/dart-flutter.md`](review-guides/dart-flutter.md) |
+| `zedu-hng/zedu-mobile` | React Native / TypeScript | Repository `AGENTS.md` and `CONTRIBUTING.md` |
 | `zedu-hng/zedu-be` | Go (Gin, GORM, Postgres) | [`review-guides/go.md`](review-guides/go.md) |
 
 When a frontend or desktop PR depends on a backend endpoint, check the route
